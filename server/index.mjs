@@ -112,5 +112,8 @@ export function createApp({storePath = path.join(root,'server/.data/sessions.jso
   return server;
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  const port=Number(process.env.PORT||8000);createApp().listen(port,'127.0.0.1',()=>console.log(`智析前后端已启动：http://127.0.0.1:${port}（知识库 + Agent 编排）`));
+  const port = Number(process.env.PORT || 8000);
+
+createApp().listen(port, '0.0.0.0', () => {
+  console.log(`智析 AI 后端启动成功！！！，端口：${port}`);
 }
