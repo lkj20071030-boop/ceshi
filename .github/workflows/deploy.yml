@@ -33,10 +33,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Build static website
-       run: npm run build -- --base=./
-       env:
-         VITE_API_BASE: https://ceshi-boal.onrender.com/api/v1
-         VITE_USE_MOCK: 'false'
+        run: npm run build -- --base=./
+        env:
+          VITE_API_BASE: https://ceshi-boal.onrender.com/api/v1
+          VITE_USE_MOCK: 'false'
       - name: Upload website
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
