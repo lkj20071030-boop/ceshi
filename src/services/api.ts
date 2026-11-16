@@ -49,6 +49,24 @@ export const api={
     const data=await requestJson(getConfig().chatPath,{message,history,profile},{signal});
     if(!obj(data))return fail();const content=data.reply??data.answer??data.response??(obj(data.message)?data.message.content:undefined);if(!str(content)||!content.trim())return fail();return content;
   },
+  /** 提问后轮询任务结果：服务端先返回 jobId，再逐次查询直到完成或失败。 */
+  async ask(body:StartDiagnosisRequest,onProgress?:(stage:string)=>void,signal?:AbortSignal):Promise<StartDiagnosisResponse>{
+    const c=validateConfig(getConfig());
+    if(c.mode==='mock')return mockStartDiagnosis(body);
+    const created=await requestJson(c.askPath,body,{config:c,signal});
+    if(!obj(created)||!str(created.jobId))return fail();
+    const jobId=created.jobId,deadline=Date.now()+c.askTimeoutMs;
+    let lastStage='';
+    for(;;){
+      const data=await requestJson(`${c.askPath}/${encodeURIComponent(jobId)}`,undefined,{config:c,signal});
+      if(!obj(data))return fail();
+      if(str(data.stage)&&data.stage!==lastStage){lastStage=data.stage;onProgress?.(data.stage);}
+      if(data.status==='done')return diagnosis(data.result);
+      if(data.status==='error'){const detail=obj(data.error)&&str(data.error.detail)?data.error.detail:'生成失败，请稍后重试。';const status=obj(data.error)&&typeof data.error.status==='number'?data.error.status:undefined;throw new ApiError(detail,status);}
+      if(Date.now()>deadline)throw new ApiError('生成时间超过等待上限，请稍后重新提问。');
+      await new Promise(r=>setTimeout(r,800));
+    }
+  },
   async startDiagnosis(body:StartDiagnosisRequest,signal?:AbortSignal):Promise<StartDiagnosisResponse>{return getConfig().mode==='mock'?mockStartDiagnosis(body):diagnosis(await requestJson('/diagnose/start',body,{signal}));},
   async submitDiagnosis(body:SubmitDiagnosisRequest,signal?:AbortSignal):Promise<SubmitDiagnosisResponse>{return getConfig().mode==='mock'?mockSubmitDiagnosis(body):result(await requestJson('/diagnose/submit',body,{signal}));},
   async startRetest(body:{sessionId:string},signal?:AbortSignal):Promise<StartDiagnosisResponse>{return getConfig().mode==='mock'?mockStartRetest(body.sessionId):diagnosis(await requestJson('/diagnose/retest',body,{signal}));},

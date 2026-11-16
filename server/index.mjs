@@ -42,6 +42,39 @@ export function createApp({storePath = path.join(root,'server/.data/sessions.jso
   }
   const publicStart = (session, prepared) => ({sessionId:session.id, summary:prepared.summary, graph:prepared.graph, sources:prepared.sources, quiz:prepared.publicQuiz, agent:prepared.agent});
 
+  // 异步提问任务：先返回 jobId，前端轮询结果，避免长耗时生成把同步请求拖到超时。
+  const askJobs = new Map();
+  const askQueue = [];
+  const ASK_TTL = 30*60*1000, ASK_CONCURRENCY = 2;
+  let askActive = 0;
+  function pruneJobs(){
+    const now = Date.now();
+    for(const [id,job] of askJobs) if(job.finishedAt && now-job.finishedAt>ASK_TTL) askJobs.delete(id);
+  }
+  function pumpAskQueue(){
+    while(askActive<ASK_CONCURRENCY && askQueue.length){
+      const job = askQueue.shift();
+      askActive++;
+      runAskJob(job).finally(()=>{askActive--;pumpAskQueue();});
+    }
+  }
+  async function runAskJob(job){
+    job.status='running'; job.stage='理解问题'; job.updatedAt=Date.now();
+    try{
+      const prepared = await agent.start({question:job.question, profile:job.profile, onStage:stage=>{if(job.status==='running'){job.stage=stage;job.updatedAt=Date.now();}}});
+      const session = newSession(prepared);
+      job.sessionId = session.id;
+      job.result = publicStart(session, prepared);
+      job.status='done'; job.stage='完成';
+    }catch(e){
+      job.status='error'; job.stage='失败';
+      job.error = {status:e.status||500, detail:e.status?e.message:'服务器处理失败，请稍后重试。'};
+      if(!e.status) console.error(e);
+    }finally{
+      job.finishedAt=Date.now(); job.updatedAt=Date.now();
+    }
+  }
+
   const server = http.createServer(async(req,res)=>{
     const origin = req.headers.origin;
     const allowed = new Set((process.env.CORS_ORIGINS||'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:4173,http://localhost:4173').split(',').map(s=>s.trim()));
@@ -66,6 +99,22 @@ export function createApp({storePath = path.join(root,'server/.data/sessions.jso
         const started=performance.now();
         const result=plotFunction(body);
         return send(200,{ok:true,durationMs:Math.round(performance.now()-started),result});
+      }
+      if(req.method==='POST'&&route==='/ask'){
+        if(typeof body.question!=='string'||!body.question.trim()||body.question.length>2000)fail(422,'问题需为 1–2000 个字符');
+        if(!body.profile||typeof body.profile.role!=='string'||typeof body.profile.field!=='string')fail(422,'缺少学习身份或学科');
+        pruneJobs();
+        const job={id:randomUUID(),status:'queued',stage:'排队中',question:body.question.trim(),profile:body.profile,createdAt:Date.now(),updatedAt:Date.now()};
+        askJobs.set(job.id,job);
+        askQueue.push(job);
+        pumpAskQueue();
+        return send(202,{jobId:job.id,status:job.status,stage:job.stage,pollAfterMs:800});
+      }
+      if(req.method==='GET'&&route.startsWith('/ask/')){
+        pruneJobs();
+        const job=askJobs.get(decodeURIComponent(route.slice('/ask/'.length)));
+        if(!job)fail(404,'提问任务不存在或已过期，请重新提问。');
+        return send(200,{jobId:job.id,status:job.status,stage:job.stage,elapsedMs:Date.now()-job.createdAt,sessionId:job.sessionId||null,...(job.status==='done'?{result:job.result}:{}),...(job.status==='error'?{error:job.error}:{})});
       }
       if(req.method==='POST'&&route==='/diagnose/start'){
         if(typeof body.question!=='string'||!body.question.trim()||body.question.length>2000)fail(422,'问题需为 1–2000 个字符');

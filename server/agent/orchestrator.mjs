@@ -147,19 +147,23 @@ export function createDiagnosisAgent({ llm, topics } = {}) {
     return { topic, trace };
   }
 
-  async function start({ question, profile }) {
+  async function start({ question, profile, onStage }) {
+    const stage = label => { try { onStage?.(label); } catch { /* 进度回调失败不影响主流程 */ } };
     if (generator) {
       let known = true;
       try { K.matchTopicLocal(question, catalogTopics); } catch (e) { if(e.status!==422)throw e; known=false; }
       if (!known) {
+        stage('生成教学包');
         const started=Date.now();
         const topic=await generator.generate(question,profile);
         const questions=K.normalizeQuestions(topic.quiz);
         return {topic,question,profile,retest:false,questions,summary:localSummary(topic,false),graph:K.graphOf(topic),sources:K.publicSources(topic),publicQuiz:K.publicQuiz(topic,questions),agent:meta([traceOf('intent','llm','ok',Date.now()-started),traceOf('diagnose','llm','ok',0)])};
       }
     }
+    stage('理解问题');
     const { topic, trace: intentTrace } = await resolveTopic(question, profile);
     const graph = K.graphOf(topic);
+    stage('生成诊断短测');
     const validation = quizValidator({ nodeIds: topic.nodes.map(node => node.id), previousStems: topic.quiz.map(item => item.stem) });
     const { value, trace: diagnoseTrace } = await runStage(
       'diagnose',

@@ -22,9 +22,9 @@ npm.cmd run model:check
 npm.cmd start
 ```
 
-也可以双击原来的“启动前后端.cmd”。网页访问 http://127.0.0.1:8000/ ，选择真实后端与 /api/v1，输入“为什么植物进行光合作用需要光？”。
+也可以双击 01-启动/启动前后端.cmd。网页访问 http://127.0.0.1:8000/ ，选择真实后端与 /api/v1，输入“为什么植物进行光合作用需要光？”。
 
-Key 可通过 Configure-DeepSeek.cmd 更新，更新后重启后端。不要把 Key 发送到聊天、前端源码或 GitHub。
+Key 可通过 01-启动/Configure-DeepSeek.cmd 更新，更新后重启后端。不要把 Key 发送到聊天、前端源码或 GitHub。
 
 ## 已验证
 
